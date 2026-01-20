@@ -9,6 +9,10 @@ import csv
 import unicodedata
 import re
 from scipy.optimize import least_squares
+from random import *
+
+game, id, town = "Villes-de-France", 39, "fr"
+#game, id, town = "Villes-d-Europe", 44, "europa"
 
 def trilateration(points, distances):
 	points = np.array(points)
@@ -16,7 +20,7 @@ def trilateration(points, distances):
 
 	def residuals(P):
 		return np.linalg.norm(points - P, axis=1) - distances
-	
+
 	P0 = points.mean(axis=0)
 	result = least_squares(residuals, P0)
 	return result.x
@@ -69,13 +73,33 @@ print(cities)
 text_pos = []
 positions = {}
 
+def noised(target):
+    if random() < 0.2:
+        print("Changement")
+        target = choice(list(data.keys()))
+
+    print("pause")
+    time.sleep(uniform(0.3, 0.6))
+    print("play")
+    x, y = play(target)
+
+    if random() < 0.6:
+        print("Moins precis")
+        x *= uniform(0.95, 1.05)
+    if random() < 0.6:
+        y *= uniform(0.95, 1.05)
+    print("click")
+    return (x, y)
+
+
 def play(target):
 	pos_x = np.array([i[0] for i in positions.values()])
 	pos_y = np.array([i[1] for i in positions.values()])
 	cities_x = np.array([i[0] for i in cities.values()])
 	cities_y = np.array([i[1] for i in cities.values()])
 
-	target_x, target_y = data.get(target, data["paris"])
+	default = list(data.keys())[0]
+	target_x, target_y = data.get(target, data[default])
 
 	target_x = (target_x - cities_x.min()) / (cities_x.max() - cities_x.min())
 	target_y = (target_y - cities_y.min()) / (cities_y.max() - cities_y.min())
@@ -117,12 +141,15 @@ def extract_cities(js):
 def on_response(response):
 	url = response.url
 	if url.endswith(".js"):
+		print(url.split("/")[-1])
 		try:
-			if "towns_fr" in url.split("/")[-1]:
+			if f"towns_{town}" in url.split("/")[-1]:
 				body = response.body().decode("utf-8", errors="ignore")
 				extract_cities(body)
 		except Exception as e:
 			print("Erreur :", url, e)
+
+diffs = {}
 
 with sync_playwright() as p:
 	try:
@@ -134,7 +161,7 @@ with sync_playwright() as p:
 		page.set_extra_http_headers(headers)
 
 		page.on("response", on_response)
-		reponse = page.goto("https://www.jeux-geographiques.com/jeux-en-ligne-Villes-de-France-Expert-_pageid359.html")
+		reponse = page.goto(f"https://www.jeux-geographiques.com/jeux-en-ligne-{game}-_pageid{id}.html")
 		page.wait_for_load_state("networkidle")
 
 		time.sleep(0.5)
@@ -204,9 +231,15 @@ with sync_playwright() as p:
 			if text != previous_text:
 				time.sleep(0.1)
 				previous_text = text
-				click_pos = play(remove_accents(text))
+				#click_pos = play(remove_accents(text))
+				click_pos = noised(remove_accents(text))
 				page.mouse.click(*click_pos)
 				count += 1
+
+			dist_el = page.query_selector(".distanceLabel")
+			if dist_el:
+				dist = dist_el.text_content().split(" ")[0]
+				diffs[tuple(click_pos)] = (dist, text)
 
 		input("quitter")
 
@@ -215,3 +248,5 @@ with sync_playwright() as p:
 		traceback.print_exc()
 
 	browser.close()
+
+print(diffs)
